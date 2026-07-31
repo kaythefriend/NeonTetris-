@@ -143,6 +143,51 @@ src/
 data/db.json                 # local JSON datastore
 ```
 
+## Patch notes (this fix pass)
+
+Fixes applied to get this deploying and to close the worst payment/security gaps:
+
+- **Build fix:** `@farcaster/miniapp-sdk` bumped `^0.1.6` → `^0.2.3` to satisfy
+  `@farcaster/miniapp-wagmi-connector@1.1.1`'s peer requirement — this was
+  the actual cause of the `ERESOLVE`/`npm install` failure on Vercel. Added
+  `.npmrc` with `legacy-peer-deps=true` as a safety net against future
+  peer-conflict breaks.
+- **Payment replay:** every route that verifies an on-chain tx
+  (`/api/game/start`, `/api/tip`, `/api/duel/create`, `/api/duel/accept`)
+  now atomically claims the `txHash` (`claimTxHash` in `src/lib/db/kv.ts`)
+  so a single payment can't be resubmitted to unlock repeated games, tips,
+  or duel entries.
+- **Fabricated game results:** `/api/game/complete` now requires the
+  one-time session created by `/api/game/start` for that `fid` + `txHash`
+  and consumes it, so one payment backs exactly one result submission
+  instead of unlimited ones. Note: the *score value itself* is still
+  client-submitted and not independently verified — real anti-cheat would
+  need a server-authoritative game loop, out of scope here.
+- **Duel score spoofing:** `/api/duel/score` now requires the caller to
+  supply the stake `txHash` matching that `fid`'s side of the duel, instead
+  of trusting a bare `fid` in the request body. This is a partial
+  mitigation, not real auth — see the comment in
+  `src/app/api/duel/score/route.ts` for what it doesn't cover and why
+  Farcaster Quick Auth is the real fix.
+- **Storage on Vercel:** added an Upstash Redis-backed adapter
+  (`src/lib/db/db.ts` + `src/lib/db/kv.ts`), used automatically when
+  `KV_REST_API_URL` / `KV_REST_API_TOKEN` are set (Vercel's KV/Upstash
+  integration injects these). Without them the app still falls back to the
+  local JSON file, but that **will not persist reliably once deployed** —
+  add the integration before handling real payments. See `.env.example`.
+- **Opponent duel-play flow:** the opponent's "Accept" button in
+  `DuelsPanel` previously never connected into the pending-duel/play state
+  at all — there was no way to actually play the duel game after accepting.
+  Wired `onAccepted` through to `page.tsx` so accepting now arms the same
+  play → submit-score flow the challenger already had.
+- Added the missing `scripts/seed.ts` referenced by `npm run db:seed`.
+
+**Still open, deliberately not patched here** (bigger scope, flagging so
+they don't get lost): duel wager payouts never move on-chain after a duel
+resolves (funds sit in the treasury address indefinitely), and there's no
+real Farcaster identity verification (Quick Auth / SIWF) anywhere, so `fid`
+values throughout the API are ultimately self-reported by the client.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
