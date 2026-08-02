@@ -55,6 +55,7 @@ export async function sendUsdcPayout(toAddress: string, amountUsdc: number): Pro
     args: [toAddress as `0x${string}`, usdcToBaseUnits(amountUsdc)],
   });
   const hash = await client.sendTransaction({
+    account: client.account!,
     to: USDC_ADDRESS,
     data,
     chain: base,
