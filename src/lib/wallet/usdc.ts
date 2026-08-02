@@ -36,6 +36,10 @@ export const GAME_FEE_BASE_UNITS = parseUnits(
   USDC_DECIMALS
 );
 
+/** Flat price to purchase any non-default skin. */
+export const SKIN_PRICE_USDC = Number(process.env.NEXT_PUBLIC_SKIN_PRICE_USDC ?? '1');
+export const SKIN_PRICE_BASE_UNITS = parseUnits(SKIN_PRICE_USDC.toString(), USDC_DECIMALS);
+
 /** Minimal ERC-20 ABI — only what NeonTetris needs (transfer + balance + decimals). */
 export const ERC20_ABI = [
   {

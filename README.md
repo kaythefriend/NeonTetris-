@@ -180,6 +180,11 @@ Fixes applied to get this deploying and to close the worst payment/security gaps
   at all — there was no way to actually play the duel game after accepting.
   Wired `onAccepted` through to `page.tsx` so accepting now arms the same
   play → submit-score flow the challenger already had.
+- **Security:** `next` bumped `14.2.15` → `^14.2.35`, patching the Dec 2025
+  React Server Components vulnerabilities (CVE-2025-55182/55183/55184 —
+  denial of service + potential source code exposure on App Router
+  endpoints, which this app uses). No API changes needed for this app's
+  code; Next.js flagged the old version directly in the Vercel build log.
 - Added the missing `scripts/seed.ts` referenced by `npm run db:seed`.
 
 **Still open, deliberately not patched here** (bigger scope, flagging so
@@ -187,6 +192,55 @@ they don't get lost): duel wager payouts never move on-chain after a duel
 resolves (funds sit in the treasury address indefinitely), and there's no
 real Farcaster identity verification (Quick Auth / SIWF) anywhere, so `fid`
 values throughout the API are ultimately self-reported by the client.
+
+## Patch notes (feature pass: duels, skins, sharing)
+
+New functionality added on top of the fixes above:
+
+- **Duel opponent search:** `/api/users/search` wraps Neynar's user-search
+  API (`NEYNAR_API_KEY` required, server-only). `DuelModal` now has a real
+  search box (previously the friend-search UI existed in the component but
+  had no way to actually open — see below) that lets you find and challenge
+  any Farcaster user, not just people already on the leaderboard.
+- **Automatic duel payout:** on resolution, the full pot (both stakes, no
+  house cut) is sent on-chain to the winner's verified stake wallet
+  immediately — `src/lib/wallet/payout.ts` holds a dedicated hot wallet
+  (`TREASURY_PRIVATE_KEY`) for this. **This is a real security tradeoff,
+  not a minor detail:** that key can move funds with zero human approval.
+  Use a wallet that holds *only* duel-payout float, fund it deliberately,
+  and monitor its balance — see the comment at the top of `payout.ts`. If
+  a payout fails (treasury underfunded, RPC hiccup), the duel still
+  resolves with a winner on record and `payoutStatus: 'failed'`; call
+  `payoutDuel(duelId)` again once fixed to retry.
+- **Paid skins:** `$1 USDC` (`NEXT_PUBLIC_SKIN_PRICE_USDC`) per non-default
+  skin via `/api/skins/purchase`, same on-chain verification + replay
+  protection as every other payment route in this repo.
+- **Sharing as casts:** `sdk.actions.composeCast()` wired up for three
+  cases — sharing a score after game over, sharing the app itself (button
+  in the header), and sharing a duel challenge (tags the opponent's
+  `@username`, embeds a link that deep-links straight to the Duels tab so
+  tapping it surfaces the Accept button).
+- **Duel notifications:** `/api/webhook` now does **real signature
+  verification** via `@farcaster/miniapp-node`'s `parseWebhookEvent` +
+  `verifyAppKeyWithNeynar` (uses the same `NEYNAR_API_KEY`) before trusting
+  any `miniapp_added` / `notifications_enabled` event — a prior version of
+  this file stored notification tokens without verifying who sent them;
+  that gap is now closed. When you create a duel, the opponent gets a push
+  notification if they've saved the app and enabled notifications.
+- **Fixed a real wiring bug found during this pass:** `page.tsx` was
+  rendering `<DuelModal>` without its required `open` prop and
+  `<SkinPicker>` with prop names (`onSelect`, `stats`) that didn't match
+  the component's actual interface (`onSelected`, `fid`, `unlockedSkins`)
+  — meaning the duel modal could never open at all and the skin picker
+  would have failed to compile. Also added the "+ New Challenge" button
+  that's the actual entry point to the friend-search flow (it existed in
+  `DuelModal` but nothing on the page could reach it), and wired up the
+  previously-unused `shareApp()` share button.
+
+**Still open:** duel score values are still self-reported by the client
+(see the earlier patch notes) — a fabricated high score would still
+trigger a real automatic payout. Worth a server-authoritative anti-cheat
+pass before this handles meaningful wager sizes.
 
 ## License
 

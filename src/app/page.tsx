@@ -16,7 +16,7 @@ import { Leaderboard, LeaderboardEntry } from '@/components/Leaderboard';
 import { TipModal } from '@/components/TipModal';
 import { DuelModal } from '@/components/DuelModal';
 import { DuelsPanel } from '@/components/DuelsPanel';
-import { shareScore } from '@/lib/farcaster/sdk';
+import { shareApp, shareScore } from '@/lib/farcaster/sdk';
 
 type Panel = 'game' | 'leaderboard' | 'duels';
 
@@ -29,6 +29,8 @@ export default function HomePage() {
   const [panel, setPanel] = useState<Panel>('game');
   const [tipTarget, setTipTarget] = useState<LeaderboardEntry | null>(null);
   const [duelTarget, setDuelTarget] = useState<LeaderboardEntry | null>(null);
+  const [duelModalOpen, setDuelModalOpen] = useState(false);
+  const [player, setPlayer] = useState<{ unlockedSkins: string[]; selectedSkin: string } | null>(null);
   const [stats, setStats] = useState({ bestScore: 0, totalLines: 0, duelWins: 0 });
   const { submitScore } = useDuel();
   const [pendingDuelId, setPendingDuelId] = useState<string | null>(null);
@@ -71,6 +73,28 @@ export default function HomePage() {
   });
 
   useEffect(() => {
+    if (!user?.fid) return;
+    fetch(`/api/player/${user.fid}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.player) {
+          setPlayer({ unlockedSkins: d.player.unlockedSkins, selectedSkin: d.player.selectedSkin });
+          setSelectedSkinId(d.player.selectedSkin);
+        }
+      })
+      .catch(() => {});
+  }, [user?.fid]);
+
+  // Someone tapped a shared duel-challenge cast (see shareDuelChallenge in
+  // lib/farcaster/sdk.ts, which embeds `${appUrl}?duel=${duelId}`). Jump
+  // straight to the Duels tab so they land on the Accept button.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const duelParam = new URLSearchParams(window.location.search).get('duel');
+    if (duelParam) setPanel('duels');
+  }, []);
+
+  useEffect(() => {
     if (state.status === 'idle') return;
   }, [state.status]);
 
@@ -98,7 +122,16 @@ export default function HomePage() {
             {isReady ? (user ? `@${user.username ?? user.fid}` : 'Guest mode') : 'Connecting…'}
           </p>
         </div>
-        <WalletStatus />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => shareApp()}
+            title="Share NeonTetris as a cast"
+            className="rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/60 hover:border-neon-cyan/50 hover:text-neon-cyan"
+          >
+            Share App
+          </button>
+          <WalletStatus />
+        </div>
       </header>
 
       <nav className="flex gap-2">
@@ -174,19 +207,33 @@ export default function HomePage() {
         <Leaderboard
           currentFid={user?.fid}
           onTip={(entry) => setTipTarget(entry)}
-          onDuel={(entry) => setDuelTarget(entry)}
+          onDuel={(entry) => {
+            setDuelTarget(entry);
+            setDuelModalOpen(true);
+          }}
         />
       )}
 
       {panel === 'duels' && (
-        <DuelsPanel
-          fid={user?.fid}
-          onAccepted={(duel) => {
-            setPendingDuelId(duel.id);
-            setPendingDuelTxHash(duel.opponentTxHash ?? null);
-            setPanel('game');
-          }}
-        />
+        <section className="flex flex-col gap-3">
+          <button
+            onClick={() => {
+              setDuelTarget(null);
+              setDuelModalOpen(true);
+            }}
+            className="rounded-md border border-neon-magenta bg-neon-magenta/10 py-2 text-sm font-display text-neon-magenta shadow-neon-sm"
+          >
+            + New Challenge
+          </button>
+          <DuelsPanel
+            fid={user?.fid}
+            onAccepted={(duel) => {
+              setPendingDuelId(duel.id);
+              setPendingDuelTxHash(duel.opponentTxHash ?? null);
+              setPanel('game');
+            }}
+          />
+        </section>
       )}
 
       <PayToPlayModal
@@ -199,24 +246,33 @@ export default function HomePage() {
       <SkinPicker
         open={skinPickerOpen}
         onClose={() => setSkinPickerOpen(false)}
+        fid={user?.fid}
         selectedSkinId={selectedSkinId}
-        onSelect={(id) => {
+        unlockedSkins={player?.unlockedSkins ?? ['classic-neon']}
+        onSelected={(id) => {
           setSelectedSkinId(id);
-          setSkinPickerOpen(false);
+          setPlayer((p) => ({
+            selectedSkin: id,
+            unlockedSkins: p?.unlockedSkins?.includes(id) ? p.unlockedSkins : [...(p?.unlockedSkins ?? ['classic-neon']), id],
+          }));
         }}
-        stats={stats}
       />
 
       <TipModal target={tipTarget} fromFid={user?.fid} onClose={() => setTipTarget(null)} />
 
       <DuelModal
+        open={duelModalOpen}
         target={duelTarget}
         fromFid={user?.fid}
-        onClose={() => setDuelTarget(null)}
+        onClose={() => {
+          setDuelModalOpen(false);
+          setDuelTarget(null);
+        }}
         onCreated={(duel) => {
           setPendingDuelId(duel.id);
           setPendingDuelTxHash(duel.challengerTxHash ?? null);
           setDuelTarget(null);
+          setDuelModalOpen(false);
           setPanel('game');
         }}
       />

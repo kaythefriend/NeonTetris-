@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { claimTxHash, createDuel } from '@/lib/db/db';
+import { claimTxHash, createDuel, getOrCreatePlayer } from '@/lib/db/db';
 import { verifyUsdcTransfer } from '@/lib/wallet/verifyTx';
 import { TREASURY_ADDRESS } from '@/lib/wallet/usdc';
+import { sendMiniAppNotification } from '@/lib/farcaster/notify';
 
 const bodySchema = z.object({
   challengerFid: z.number(),
@@ -43,6 +44,14 @@ export async function POST(req: NextRequest) {
     opponentFid,
     wagerUsdc,
     challengerTxHash: txHash,
+    challengerWallet,
   });
+
+  const challenger = await getOrCreatePlayer(challengerFid);
+  await sendMiniAppNotification(opponentFid, {
+    title: "You've been challenged! ⚡",
+    body: `@${challenger.username} wants to duel you for $${wagerUsdc} USDC. Tap to accept.`,
+  });
+
   return NextResponse.json({ ok: true, duel });
 }

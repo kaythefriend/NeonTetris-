@@ -34,6 +34,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This transaction has already been used' }, { status: 409 });
   }
 
-  const duel = await acceptDuel(duelId, txHash);
+  const duel = await acceptDuel(duelId, txHash, opponentWallet);
   return NextResponse.json({ ok: true, duel });
 }

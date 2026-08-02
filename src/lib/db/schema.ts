@@ -11,6 +11,8 @@ export interface PlayerRecord {
   duelLosses: number;
   totalTipsReceivedUsdc: number;
   totalTipsSentUsdc: number;
+  // Skin ids this player has purchased ($1 USDC each, via /api/skins/purchase).
+  // 'classic-neon' is free/default and always included.
   unlockedSkins: string[];
   selectedSkin: string;
   updatedAt: string;
@@ -45,13 +47,33 @@ export interface DuelRecord {
   wagerUsdc: number;
   challengerTxHash?: string;
   opponentTxHash?: string;
+  // The on-chain-verified sender address for each side's stake — captured
+  // from the transfer verification itself (not just trusted client input),
+  // and used as the payout destination when the duel resolves.
+  challengerWallet?: string;
+  opponentWallet?: string;
   challengerScore?: number;
   opponentScore?: number;
   status: DuelStatus;
   winnerFid?: number;
   payoutTxHash?: string;
+  payoutStatus?: 'paid' | 'failed';
+  payoutError?: string;
   createdAt: string;
   resolvedAt?: string;
+}
+
+/**
+ * A Farcaster Mini App notification token for a given fid, received via the
+ * /api/webhook route (after signature verification) when a user adds the
+ * app / enables notifications. Used to push a "you've been challenged"
+ * alert on duel creation.
+ */
+export interface NotificationToken {
+  fid: number;
+  url: string;
+  token: string;
+  updatedAt: string;
 }
 
 /**
@@ -73,6 +95,7 @@ export interface DbSchema {
   tips: TipRecord[];
   duels: DuelRecord[];
   sessions: GameSession[];
+  notificationTokens: NotificationToken[];
 }
 
 export const DEFAULT_DB: DbSchema = {
@@ -81,4 +104,5 @@ export const DEFAULT_DB: DbSchema = {
   tips: [],
   duels: [],
   sessions: [],
+  notificationTokens: [],
 };

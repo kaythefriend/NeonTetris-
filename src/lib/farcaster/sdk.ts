@@ -51,3 +51,36 @@ export async function shareScore(score: number, lines: number) {
     console.warn('[farcaster] composeCast failed:', err);
   }
 }
+
+/** Opens the composer to share the Mini App itself (no score/challenge context). */
+export async function shareApp() {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://neontetris.example.com';
+  try {
+    await sdk.actions.composeCast({
+      text: `Playing NeonTetris right here on Farcaster 🕹️⚡ Pay-to-play, duels, real USDC stakes.`,
+      embeds: [appUrl],
+    });
+  } catch (err) {
+    console.warn('[farcaster] composeCast failed:', err);
+  }
+}
+
+/**
+ * Opens the composer for a duel challenge cast: tags the opponent by
+ * username and embeds a link straight to this duel (so tapping it opens
+ * the app pre-scrolled to the accept flow — see the `?duel=` handling in
+ * page.tsx). The opponent also gets a push notification via
+ * /api/duel/create if they've saved the app — this cast is the *public*
+ * callout on top of that, not a replacement for it.
+ */
+export async function shareDuelChallenge(opponentUsername: string, wagerUsdc: number, duelId: string) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://neontetris.example.com';
+  try {
+    await sdk.actions.composeCast({
+      text: `I just challenged @${opponentUsername} to a $${wagerUsdc} USDC NeonTetris duel ⚡🧱 Winner takes the whole pot. Accept?`,
+      embeds: [`${appUrl}?duel=${duelId}`],
+    });
+  } catch (err) {
+    console.warn('[farcaster] composeCast failed:', err);
+  }
+}

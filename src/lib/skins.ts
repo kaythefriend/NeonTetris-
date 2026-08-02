@@ -4,8 +4,8 @@ export interface Skin {
   id: string;
   name: string;
   description: string;
-  /** Unlock requirement shown in the Skins panel */
-  unlock: 'default' | { score: number } | { lines: number } | { wins: number };
+  /** 'default' is free and always unlocked; 'paid' costs SKIN_PRICE_USDC. */
+  unlock: 'default' | 'paid';
   boardGlow: string;
   background: string; // tailwind gradient classes
   pieceColors: Record<PieceType, string>;
@@ -33,7 +33,7 @@ export const SKINS: Skin[] = [
     id: 'synthwave',
     name: 'Synthwave Sunset',
     description: 'Hot pink and orange grid lines over a deep purple horizon.',
-    unlock: { lines: 50 },
+    unlock: 'paid',
     boardGlow: '#ff2bd6',
     background: 'from-[#170221] via-[#2b0a3d] to-[#4a0e5c]',
     pieceColors: {
@@ -50,7 +50,7 @@ export const SKINS: Skin[] = [
     id: 'matrix',
     name: 'Matrix Green',
     description: 'Monochrome phosphor green, digital-rain board glow.',
-    unlock: { lines: 150 },
+    unlock: 'paid',
     boardGlow: '#39ff8f',
     background: 'from-[#010a04] via-[#031607] to-[#03210c]',
     pieceColors: {
@@ -67,7 +67,7 @@ export const SKINS: Skin[] = [
     id: 'vaporwave',
     name: 'Vaporwave',
     description: 'Pastel cyan/pink grid with a soft gradient skyline.',
-    unlock: { score: 25000 },
+    unlock: 'paid',
     boardGlow: '#8b2bff',
     background: 'from-[#1a1140] via-[#2d1b5e] to-[#3d2b7a]',
     pieceColors: {
@@ -83,8 +83,8 @@ export const SKINS: Skin[] = [
   {
     id: 'cyber-red',
     name: 'Cyberpunk Red',
-    description: 'High-alert red/amber palette. Unlocked via ranked duel wins.',
-    unlock: { wins: 10 },
+    description: 'High-alert red/amber palette for the fearless.',
+    unlock: 'paid',
     boardGlow: '#ff2b4a',
     background: 'from-[#0a0000] via-[#1a0303] to-[#2a0505]',
     pieceColors: {
@@ -103,13 +103,7 @@ export function getSkin(id: string): Skin {
   return SKINS.find((s) => s.id === id) ?? SKINS[0];
 }
 
-export function isSkinUnlocked(
-  skin: Skin,
-  stats: { bestScore: number; totalLines: number; duelWins: number }
-): boolean {
+export function isSkinUnlocked(skin: Skin, unlockedSkins: string[]): boolean {
   if (skin.unlock === 'default') return true;
-  if ('score' in skin.unlock) return stats.bestScore >= skin.unlock.score;
-  if ('lines' in skin.unlock) return stats.totalLines >= skin.unlock.lines;
-  if ('wins' in skin.unlock) return stats.duelWins >= skin.unlock.wins;
-  return false;
+  return unlockedSkins.includes(skin.id);
 }

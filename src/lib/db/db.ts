@@ -3,6 +3,7 @@ import { JSONFile } from 'lowdb/node';
 import path from 'path';
 import { DEFAULT_DB, DbSchema, PlayerRecord } from './schema';
 import { KV_CONFIGURED, claimTxHash as kvClaimTxHash, kvGet, kvSet } from './kv';
+import { sendUsdcPayout } from '../wallet/payout';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 const REDIS_DB_KEY = 'neontetris:db';
@@ -51,6 +52,7 @@ async function getDb(): Promise<Low<DbSchema>> {
   await db.read();
   db.data ||= structuredClone(DEFAULT_DB);
   db.data.sessions ||= [];
+  db.data.notificationTokens ||= [];
   dbInstance = db;
   return db;
 }
@@ -85,6 +87,36 @@ export async function consumeGameSession(fid: number, txHash: string) {
 export async function getDuelById(duelId: string) {
   const db = await getDb();
   return db.data.duels.find((d) => d.id === duelId) ?? null;
+}
+
+/** Read-only lookup — unlike getOrCreatePlayer, does not create a record. */
+export async function getPlayer(fid: number) {
+  const db = await getDb();
+  return db.data.players.find((p) => p.fid === fid) ?? null;
+}
+
+export async function saveNotificationToken(fid: number, url: string, token: string) {
+  const db = await getDb();
+  const existing = db.data.notificationTokens.find((t) => t.fid === fid);
+  if (existing) {
+    existing.url = url;
+    existing.token = token;
+    existing.updatedAt = new Date().toISOString();
+  } else {
+    db.data.notificationTokens.push({ fid, url, token, updatedAt: new Date().toISOString() });
+  }
+  await db.write();
+}
+
+export async function removeNotificationToken(fid: number) {
+  const db = await getDb();
+  db.data.notificationTokens = db.data.notificationTokens.filter((t) => t.fid !== fid);
+  await db.write();
+}
+
+export async function getNotificationToken(fid: number) {
+  const db = await getDb();
+  return db.data.notificationTokens.find((t) => t.fid === fid) ?? null;
 }
 
 export async function getOrCreatePlayer(fid: number, seed: Partial<PlayerRecord> = {}) {
@@ -180,6 +212,7 @@ export async function createDuel(input: {
   opponentFid: number;
   wagerUsdc: number;
   challengerTxHash: string;
+  challengerWallet: string;
 }) {
   const db = await getDb();
   const duel = {
@@ -188,6 +221,7 @@ export async function createDuel(input: {
     opponentFid: input.opponentFid,
     wagerUsdc: input.wagerUsdc,
     challengerTxHash: input.challengerTxHash,
+    challengerWallet: input.challengerWallet,
     status: 'pending' as const,
     createdAt: new Date().toISOString(),
   };
@@ -196,12 +230,13 @@ export async function createDuel(input: {
   return duel;
 }
 
-export async function acceptDuel(duelId: string, opponentTxHash: string) {
+export async function acceptDuel(duelId: string, opponentTxHash: string, opponentWallet: string) {
   const db = await getDb();
   const duel = db.data.duels.find((d) => d.id === duelId);
   if (!duel) throw new Error('Duel not found');
   duel.status = 'in_progress';
   duel.opponentTxHash = opponentTxHash;
+  duel.opponentWallet = opponentWallet;
   await db.write();
   return duel;
 }
@@ -226,6 +261,51 @@ export async function submitDuelScore(duelId: string, fid: number, score: number
     const loser = await getOrCreatePlayer(loserFid);
     winner.duelWins += 1;
     loser.duelLosses += 1;
+
+    await db.write();
+    await payoutDuel(duelId);
+    return duel;
+  }
+
+  await db.write();
+  return duel;
+}
+
+/**
+ * Sends the full pot (both wagers, no house cut) from the treasury to the
+ * winner's verified stake wallet. Runs automatically right after a duel
+ * resolves. If it fails (treasury underfunded, RPC hiccup, etc.), the duel
+ * stays resolved with a winner on record and payoutStatus: 'failed' —
+ * call this again with the same duelId to retry once the issue is fixed.
+ */
+export async function payoutDuel(duelId: string) {
+  const db = await getDb();
+  const duel = db.data.duels.find((d) => d.id === duelId);
+  if (!duel) throw new Error('Duel not found');
+  if (duel.status !== 'completed' || !duel.winnerFid) {
+    throw new Error('Duel is not resolved yet — cannot pay out');
+  }
+  if (duel.payoutStatus === 'paid') return duel; // already paid, don't double-send
+
+  const winnerWallet = duel.winnerFid === duel.challengerFid ? duel.challengerWallet : duel.opponentWallet;
+  if (!winnerWallet) {
+    duel.payoutStatus = 'failed';
+    duel.payoutError = 'No verified wallet address on record for the winner';
+    await db.write();
+    return duel;
+  }
+
+  const pot = duel.wagerUsdc * 2; // both sides staked equally; winner gets the whole pot, no house cut
+
+  try {
+    const payoutTxHash = await sendUsdcPayout(winnerWallet, pot);
+    duel.payoutTxHash = payoutTxHash;
+    duel.payoutStatus = 'paid';
+    duel.payoutError = undefined;
+  } catch (err: any) {
+    console.error(`[payoutDuel] failed for duel ${duelId}:`, err);
+    duel.payoutStatus = 'failed';
+    duel.payoutError = err?.message ?? 'Unknown payout error';
   }
 
   await db.write();
@@ -242,13 +322,28 @@ export async function listOpenDuels() {
   return db.data.duels.filter((d) => d.status === 'pending');
 }
 
-export async function updatePlayerSkin(fid: number, skinId: string) {
+/** Called by /api/skins/purchase after payment verification. Unlocks and equips. */
+export async function unlockSkin(fid: number, skinId: string) {
   const db = await getDb();
   const player = await getOrCreatePlayer(fid);
   if (!player.unlockedSkins.includes(skinId)) {
     player.unlockedSkins.push(skinId);
   }
   player.selectedSkin = skinId;
+  player.updatedAt = new Date().toISOString();
+  await db.write();
+  return player;
+}
+
+/** Equips an already-owned skin. No payment involved — throws if not owned. */
+export async function selectSkin(fid: number, skinId: string) {
+  const db = await getDb();
+  const player = await getOrCreatePlayer(fid);
+  if (!player.unlockedSkins.includes(skinId)) {
+    throw new Error('This skin has not been purchased yet');
+  }
+  player.selectedSkin = skinId;
+  player.updatedAt = new Date().toISOString();
   await db.write();
   return player;
 }

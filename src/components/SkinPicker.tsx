@@ -1,46 +1,70 @@
 'use client';
 
 import { isSkinUnlocked, SKINS } from '@/lib/skins';
+import { useSkinPurchase } from '@/hooks/useSkinPurchase';
 
 interface SkinPickerProps {
   open: boolean;
   onClose: () => void;
+  fid?: number;
   selectedSkinId: string;
-  onSelect: (skinId: string) => void;
-  stats: { bestScore: number; totalLines: number; duelWins: number };
+  unlockedSkins: string[];
+  onSelected: (skinId: string) => void;
 }
 
-function unlockLabel(skin: (typeof SKINS)[number]) {
-  if (skin.unlock === 'default') return 'Unlocked from the start';
-  if ('score' in skin.unlock) return `Unlock at ${skin.unlock.score.toLocaleString()} best score`;
-  if ('lines' in skin.unlock) return `Unlock after ${skin.unlock.lines} total lines cleared`;
-  if ('wins' in skin.unlock) return `Unlock after ${skin.unlock.wins} duel wins`;
-  return '';
-}
+export function SkinPicker({ open, onClose, fid, selectedSkinId, unlockedSkins, onSelected }: SkinPickerProps) {
+  const { purchaseSkin, status, error, priceUsdc } = useSkinPurchase();
 
-export function SkinPicker({ open, onClose, selectedSkinId, onSelect, stats }: SkinPickerProps) {
   if (!open) return null;
+
+  const handlePick = async (skinId: string, unlocked: boolean) => {
+    if (!fid) return;
+    if (unlocked) {
+      // Already owned — just equip it, no payment needed.
+      const res = await fetch('/api/skins/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fid, skinId }),
+      });
+      if (res.ok) onSelected(skinId);
+      return;
+    }
+    const bought = await purchaseSkin(fid, skinId);
+    if (bought) onSelected(skinId);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
       <div className="w-full max-w-md rounded-xl border border-neon-purple/40 bg-panel p-6 shadow-neon-sm">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between">
           <h2 className="font-display text-xl text-neon-purple animate-flicker">Skins</h2>
           <button onClick={onClose} className="text-white/50 hover:text-white">✕</button>
         </div>
+        <p className="mb-4 text-xs text-white/50">
+          Classic Neon is free. Everything else is a one-time ${priceUsdc} USDC purchase, paid
+          directly from your Farcaster wallet.
+        </p>
 
-        <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-1">
+        {status !== 'idle' && (
+          <div className="mb-3 rounded-md border border-white/10 bg-black/40 p-2 text-xs text-white/60">
+            {status === 'awaiting-signature' && `Confirm the $${priceUsdc} USDC payment in your wallet…`}
+            {status === 'verifying' && 'Verifying payment…'}
+            {status === 'unlocked' && 'Skin unlocked!'}
+            {status === 'error' && <span className="text-neon-red">{error}</span>}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 max-h-[55vh] overflow-y-auto pr-1">
           {SKINS.map((skin) => {
-            const unlocked = isSkinUnlocked(skin, stats);
+            const unlocked = isSkinUnlocked(skin, unlockedSkins);
             const selected = skin.id === selectedSkinId;
             return (
               <button
                 key={skin.id}
-                disabled={!unlocked}
-                onClick={() => onSelect(skin.id)}
-                className={`flex items-center gap-3 rounded-lg border p-3 text-left transition ${
+                onClick={() => handlePick(skin.id, unlocked)}
+                className={`flex items-center gap-3 rounded-lg border p-3 text-left transition hover:bg-white/5 ${
                   selected ? 'border-white shadow-neon-sm' : 'border-white/10'
-                } ${unlocked ? 'hover:bg-white/5' : 'opacity-40 cursor-not-allowed'}`}
+                }`}
               >
                 <div className="flex gap-1">
                   {Object.values(skin.pieceColors).slice(0, 4).map((c, i) => (
@@ -58,7 +82,7 @@ export function SkinPicker({ open, onClose, selectedSkinId, onSelect, stats }: S
                   <div className="text-xs text-white/50">{skin.description}</div>
                   {!unlocked && (
                     <div className="mt-1 text-[10px] uppercase tracking-wide text-neon-yellow">
-                      {unlockLabel(skin)}
+                      ${priceUsdc} USDC — tap to buy
                     </div>
                   )}
                 </div>
