@@ -82,6 +82,7 @@ export async function consumeGameSession(fid: number, txHash: string) {
   if (session.consumed) throw new Error('This game session has already been used to submit a result');
   session.consumed = true;
   await db.write();
+  return session;
 }
 
 export async function getDuelById(duelId: string) {
