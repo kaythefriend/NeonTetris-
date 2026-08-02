@@ -54,6 +54,11 @@ export interface DuelRecord {
   opponentWallet?: string;
   challengerScore?: number;
   opponentScore?: number;
+  // Set the moment each side's stake is verified (create / accept) — the
+  // earliest real moment that side could have started playing. Used to
+  // bound how large a submitted score is allowed to plausibly be.
+  challengerStartedAt: string;
+  opponentStartedAt?: string;
   status: DuelStatus;
   winnerFid?: number;
   payoutTxHash?: string;
