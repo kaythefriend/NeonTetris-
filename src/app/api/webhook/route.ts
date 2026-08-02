@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
         await removeNotificationToken(fid);
         break;
       default:
-        console.log('[farcaster webhook] unhandled event', event.event);
+        console.log('[farcaster webhook] unhandled event', (event as { event: string }).event);
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
