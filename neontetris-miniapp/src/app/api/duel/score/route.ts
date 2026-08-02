@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDuelById, submitDuelScore } from '@/lib/db/db';
+import { isScorePlausible } from '@/lib/tetris/antiCheat';
 
 const bodySchema = z.object({
   duelId: z.string(),
@@ -50,6 +51,13 @@ export async function POST(req: NextRequest) {
       { error: "txHash does not match this player's stake for this duel" },
       { status: 403 }
     );
+  }
+
+  const startedAt = duel.challengerFid === fid ? duel.challengerStartedAt : duel.opponentStartedAt;
+  const elapsedMs = startedAt ? Date.now() - new Date(startedAt).getTime() : 0;
+  const plausibility = isScorePlausible(score, elapsedMs);
+  if (!plausibility.ok) {
+    return NextResponse.json({ error: plausibility.reason }, { status: 400 });
   }
 
   const updated = await submitDuelScore(duelId, fid, score);

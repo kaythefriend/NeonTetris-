@@ -82,6 +82,7 @@ export async function consumeGameSession(fid: number, txHash: string) {
   if (session.consumed) throw new Error('This game session has already been used to submit a result');
   session.consumed = true;
   await db.write();
+  return session;
 }
 
 export async function getDuelById(duelId: string) {
@@ -224,6 +225,7 @@ export async function createDuel(input: {
     challengerWallet: input.challengerWallet,
     status: 'pending' as const,
     createdAt: new Date().toISOString(),
+    challengerStartedAt: new Date().toISOString(),
   };
   db.data.duels.push(duel);
   await db.write();
@@ -237,6 +239,7 @@ export async function acceptDuel(duelId: string, opponentTxHash: string, opponen
   duel.status = 'in_progress';
   duel.opponentTxHash = opponentTxHash;
   duel.opponentWallet = opponentWallet;
+  duel.opponentStartedAt = new Date().toISOString();
   await db.write();
   return duel;
 }

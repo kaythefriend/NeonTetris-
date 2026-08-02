@@ -242,6 +242,23 @@ New functionality added on top of the fixes above:
 trigger a real automatic payout. Worth a server-authoritative anti-cheat
 pass before this handles meaningful wager sizes.
 
+## Patch notes (score-plausibility check)
+
+- Added `src/lib/tetris/antiCheat.ts` — before a duel score (or a regular
+  paid game's score) is accepted, it's checked against a generous
+  time-based ceiling (derived from the actual scoring formula in
+  `engine.ts`: a perfect Tetris clear every 1.2s, leveling up and combo'ing
+  the whole way — already faster than any known legitimate play) and
+  rejected if it's impossible even in that best case. Duels now record a
+  `challengerStartedAt` / `opponentStartedAt` timestamp the moment each
+  side's stake is verified, used as the elapsed-time anchor.
+- **Be clear-eyed about what this is and isn't:** this is not real
+  anti-cheat. It stops the lazy, common version of the exploit — instantly
+  submitting a huge fabricated score — but does nothing against a patient
+  attacker who fabricates a "plausible" score and waits the right amount of
+  time before submitting. A genuine fix needs a server-authoritative game
+  loop or a signed replay log, which is real scope beyond this patch.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
